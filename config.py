@@ -1,6 +1,13 @@
-# פורטים חופשיים לחלוטין
+# כתובות Nodes
 NODES = [
     ("127.0.0.1", 9010),
     ("127.0.0.1", 9020),
-    ("127.0.0.1", 9030),
+    ("127.0.0.1", 9030)
+]
+
+# מפתחות זהים לכל ה-Nodes וה-Clients (16 bytes כל אחד)
+KEYS = [
+    b'\x12\x34\x56\x78\x90\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef',  # Node1
+    b'\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99',  # Node2
+    b'\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff',  # Node3
 ]

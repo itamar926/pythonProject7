@@ -1,13 +1,12 @@
 class Crypto:
     @staticmethod
-    def xor_encrypt(data: bytes, key: bytes) -> bytes:
-        return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
+    def xor(data: bytes, key: bytes) -> bytes:
+        return bytes([data[i] ^ key[i % len(key)] for i in range(len(data))])
 
     @staticmethod
-    def xor_decrypt(data: bytes, key: bytes) -> bytes:
-        return Crypto.xor_encrypt(data, key)
+    def encode_message(message: str) -> bytes:
+        return message.encode("utf-8")
 
     @staticmethod
-    def generate_key(length=16) -> bytes:
-        from random import randint
-        return bytes([randint(0, 255) for _ in range(length)])
+    def decode_message(data: bytes) -> str:
+        return data.decode("utf-8")

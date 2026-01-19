@@ -16,27 +16,29 @@ class Client:
         server = socket.socket()
         server.bind(("0.0.0.0", self.listen_port))
         server.listen()
-
         while True:
             conn, _ = server.accept()
             data = conn.recv(4096)
             conn.close()
 
+            # Apply XOR layers
             for k in self.keys:
                 data = Crypto.xor(data, k)
 
-            sender, msg = Packet.decode(data)
-            print(f"\n{sender}> {msg}")
+            try:
+                from_client, msg = Packet.decode(data)
+            except:
+                from_client, msg = "Unknown", data.decode(errors="ignore")
 
-    def send(self, message, target_port):
-        packet = Packet(self.name, message)
-        data = packet.encode()
+            if hasattr(self, "on_message"):
+                self.on_message(from_client, msg)
+            else:
+                print(f"{from_client}> {msg}")
 
+    def send(self, message, target_port=None):
+        data = Packet(self.name, message).encode()
         for k in reversed(self.keys):
             data = Crypto.xor(data, k)
-
-        data += f"|{target_port}".encode()
-
         s = socket.socket()
         s.connect(self.entry)
         s.send(data)

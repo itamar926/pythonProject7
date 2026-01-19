@@ -15,19 +15,14 @@ class Visualizer:
 
     def _create_node(self, name, x):
         y = 100
-        circle = self.canvas.create_oval(
-            x-30, y-30, x+30, y+30, fill="gray"
-        )
+        circle = self.canvas.create_oval(x-30, y-30, x+30, y+30, fill="gray")
         self.canvas.create_text(x, y+50, text=name)
         self.nodes[name] = circle
 
     def flash(self, node_name):
         circle = self.nodes[node_name]
         self.canvas.itemconfig(circle, fill="green")
-        self.root.after(
-            300,
-            lambda: self.canvas.itemconfig(circle, fill="gray")
-        )
+        self.root.after(300, lambda: self.canvas.itemconfig(circle, fill="gray"))
 
     def start(self):
         self.root.mainloop()

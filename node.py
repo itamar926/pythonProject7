@@ -3,6 +3,8 @@ import threading
 from crypto_utils import Crypto
 
 class Node:
+    CLIENT_PORTS = [9100, 9101, 9102]  # כל הפורטים של הקליינטים
+
     def __init__(self, name, host, port, next_host, next_port, key, visualizer=None):
         self.name = name
         self.host = host
@@ -15,7 +17,6 @@ class Node:
         server = socket.socket()
         server.bind((self.host, self.port))
         server.listen()
-
         print(f"{self.name} listening on {self.host}:{self.port}")
 
         while True:
@@ -32,19 +33,24 @@ class Node:
         decrypted = Crypto.xor(data, self.key)
 
         if self.next:
+            # Forward to next node
             encrypted = Crypto.xor(decrypted, self.key)
-            s = socket.socket()
-            s.connect(self.next)
-            s.send(encrypted)
-            s.close()
-            print(f"{self.name} forwarded message")
+            try:
+                s = socket.socket()
+                s.connect(self.next)
+                s.send(encrypted)
+                s.close()
+                print(f"{self.name} forwarded message")
+            except:
+                print(f"{self.name} failed to forward")
         else:
-            payload, target_port = decrypted.rsplit(b"|", 1)
-            target_port = int(target_port.decode())
-
-            s = socket.socket()
-            s.connect(("127.0.0.1", target_port))
-            s.send(payload)
-            s.close()
-
-            print(f"{self.name} delivered message to client")
+            # Node אחרון - שולח לכל הקליינטים
+            for client_port in self.CLIENT_PORTS:
+                try:
+                    s = socket.socket()
+                    s.connect(("127.0.0.1", client_port))
+                    s.send(decrypted)
+                    s.close()
+                except:
+                    continue
+            print(f"{self.name} delivered message to all clients")

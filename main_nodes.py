@@ -1,21 +1,17 @@
-import threading
-import time
 from node import Node
-from config import NODES, KEYS
+from visualizer import Visualizer
+import threading
 
-if __name__ == "__main__":
-    for i, (ip, port) in enumerate(NODES):
-        next_node = NODES[i + 1] if i + 1 < len(NODES) else None
-        node = Node(
-            host=ip,
-            port=port,
-            key=KEYS[i],
-            next_node=next_node,
-            name=f"Node-{i+1}"
-        )
-        t = threading.Thread(target=node.start, daemon=True)
-        t.start()
+vis = Visualizer()
 
-    print("All nodes are running.")
-    while True:
-        time.sleep(1)
+nodes = [
+    Node("Node-1", "0.0.0.0", 9010, "127.0.0.1", 9020, 11, vis),
+    Node("Node-2", "0.0.0.0", 9020, "127.0.0.1", 9030, 22, vis),
+    Node("Node-3", "0.0.0.0", 9030, None, None, 33, vis),
+]
+
+for n in nodes:
+    threading.Thread(target=n.start, daemon=True).start()
+
+print("All Tor nodes are running")
+vis.start()

@@ -3,66 +3,48 @@ import threading
 from crypto_utils import Crypto
 
 class Node:
-    def __init__(self, host, port, key, next_node=None, name="Node"):
+    def __init__(self, name, host, port, next_host, next_port, key, visualizer=None):
+        self.name = name
         self.host = host
         self.port = port
+        self.next = (next_host, next_port) if next_host else None
         self.key = key
-        self.next_node = next_node
-        self.name = name
-        self.clients = []  # חיבורי Clients שמקבלים הודעות
+        self.vis = visualizer
 
     def start(self):
         server = socket.socket()
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.host, self.port))
         server.listen()
+
         print(f"{self.name} listening on {self.host}:{self.port}")
 
         while True:
-            conn, addr = server.accept()
-            t = threading.Thread(target=self.handle_connection, args=(conn,), daemon=True)
-            t.start()
+            conn, _ = server.accept()
+            threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
 
-    def handle_connection(self, conn):
-        # Node האחרון – שומר Clients שמחוברים
-        if not self.next_node:
-            if conn not in self.clients:
-                self.clients.append(conn)
+    def handle(self, conn):
+        data = conn.recv(4096)
+        conn.close()
 
-        try:
-            data = conn.recv(4096)
-            if not data:
-                conn.close()
-                return
+        if self.vis:
+            self.vis.flash(self.name)
 
-            decrypted = Crypto.xor(data, self.key)
+        decrypted = Crypto.xor(data, self.key)
 
-            if self.next_node:
-                next_ip, next_port = self.next_node
-                s = socket.socket()
-                s.connect((next_ip, next_port))
-                s.send(decrypted)
-                s.close()
-                print(f"{self.name} forwarded message")
-            else:
-                try:
-                    message = Crypto.decode_message(decrypted)
-                except:
-                    message = str(decrypted)
-                print(f"{self.name} FINAL MESSAGE: {message}")
+        if self.next:
+            encrypted = Crypto.xor(decrypted, self.key)
+            s = socket.socket()
+            s.connect(self.next)
+            s.send(encrypted)
+            s.close()
+            print(f"{self.name} forwarded message")
+        else:
+            payload, target_port = decrypted.rsplit(b"|", 1)
+            target_port = int(target_port.decode())
 
-                # שליחה לכל ה-Clients
-                for c in self.clients:
-                    try:
-                        c.send(decrypted)
-                    except:
-                        pass
+            s = socket.socket()
+            s.connect(("127.0.0.1", target_port))
+            s.send(payload)
+            s.close()
 
-        except:
-            pass
-        finally:
-            if self.next_node is None:
-                # אל תמחק את conn – צריך אותו כדי לקבל חיבורים נוספים
-                pass
-            else:
-                conn.close()
+            print(f"{self.name} delivered message to client")

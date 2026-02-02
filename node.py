@@ -1,9 +1,10 @@
 import socket
 import threading
 from crypto_utils import Crypto
+from packet import Packet
 
 class Node:
-    CLIENT_PORTS = [9100, 9101, 9102]  # כל הפורטים של הקליינטים
+    clients = {}  # username -> port
 
     def __init__(self, name, host, port, next_host, next_port, key, visualizer=None):
         self.name = name
@@ -33,24 +34,35 @@ class Node:
         decrypted = Crypto.xor(data, self.key)
 
         if self.next:
-            # Forward to next node
             encrypted = Crypto.xor(decrypted, self.key)
-            try:
-                s = socket.socket()
-                s.connect(self.next)
-                s.send(encrypted)
-                s.close()
-                print(f"{self.name} forwarded message")
-            except:
-                print(f"{self.name} failed to forward")
+            s = socket.socket()
+            s.connect(self.next)
+            s.send(encrypted)
+            s.close()
         else:
-            # Node אחרון - שולח לכל הקליינטים
-            for client_port in self.CLIENT_PORTS:
-                try:
-                    s = socket.socket()
-                    s.connect(("127.0.0.1", client_port))
-                    s.send(decrypted)
-                    s.close()
-                except:
-                    continue
-            print(f"{self.name} delivered message to all clients")
+            sender, target, msg = Packet.decode(decrypted)
+
+            # רישום משתמש
+            if msg.startswith("REGISTER:"):
+                port = int(msg.split(":")[1])
+                Node.clients[sender] = port
+                print("Registered:", Node.clients)
+                return
+
+            # שליחה לכולם
+            if target == "ALL":
+                for user, port in Node.clients.items():
+                    self.send_to_client(port, decrypted)
+            else:
+                # שליחה פרטית
+                if target in Node.clients:
+                    self.send_to_client(Node.clients[target], decrypted)
+
+    def send_to_client(self, port, data):
+        try:
+            s = socket.socket()
+            s.connect(("127.0.0.1", port))
+            s.send(data)
+            s.close()
+        except:
+            pass

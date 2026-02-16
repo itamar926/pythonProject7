@@ -1,17 +1,16 @@
 from node import Node
-from visualizer import Visualizer
 import threading
 
-vis = Visualizer()
+SERVER_IP = "172.16.15.49"
 
 nodes = [
-    Node("Node-1", "0.0.0.0", 9010, "127.0.0.1", 9020, 11, vis),
-    Node("Node-2", "0.0.0.0", 9020, "127.0.0.1", 9030, 22, vis),
-    Node("Node-3", "0.0.0.0", 9030, None, None, 33, vis)
+    Node("Node-1", "0.0.0.0", 9010, "172.16.15.49", 9020, 11),
+    Node("Node-2", "0.0.0.0", 9020, "172.16.15.49", 9030, 22),
+    Node("Node-3", "0.0.0.0", 9030, None, None, 33)
 ]
 
 for n in nodes:
     threading.Thread(target=n.start, daemon=True).start()
 
-print("All Tor nodes are running. Ready to receive messages...")
-vis.start()
+print("All Tor nodes are running.")
+input("Press Enter to exit...\n")

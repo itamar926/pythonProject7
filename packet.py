@@ -1,16 +1,15 @@
 class Packet:
+
     def __init__(self, sender, target, message):
-        self.sender = sender      # מי שולח
-        self.target = target      # ALL או שם משתמש
+        self.sender = sender
+        self.target = target
         self.message = message
 
-    def encode(self) -> bytes:
-        return f"{self.sender}|{self.target}|{self.message}".encode("utf-8")
+    def encode(self):
+        return f"{self.sender}|{self.target}|{self.message}".encode()
 
     @staticmethod
-    def decode(data: bytes):
-        text = data.decode("utf-8", errors="ignore")
-        parts = text.split("|", 2)
-        if len(parts) == 3:
-            return parts[0], parts[1], parts[2]
-        return "Unknown", "ALL", text
+    def decode(data):
+        text = data.decode()
+        sender, target, message = text.split("|", 2)
+        return sender, target, message

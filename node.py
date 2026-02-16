@@ -3,66 +3,71 @@ import threading
 from crypto_utils import Crypto
 from packet import Packet
 
-class Node:
-    clients = {}  # username -> port
 
-    def __init__(self, name, host, port, next_host, next_port, key, visualizer=None):
+class Node:
+    clients = {}
+
+    def __init__(self, name, host, port, next_host, next_port, key):
         self.name = name
         self.host = host
         self.port = port
         self.next = (next_host, next_port) if next_host else None
         self.key = key
-        self.vis = visualizer
 
     def start(self):
-        server = socket.socket()
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind((self.host, self.port))
         server.listen()
+
         print(f"{self.name} listening on {self.host}:{self.port}")
 
         while True:
-            conn, _ = server.accept()
-            threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
+            conn, addr = server.accept()
+            threading.Thread(
+                target=self.handle,
+                args=(conn, addr),
+                daemon=True
+            ).start()
 
-    def handle(self, conn):
+    def handle(self, conn, addr):
+        client_ip = addr[0]
+
         data = conn.recv(4096)
         conn.close()
 
-        if self.vis:
-            self.vis.flash(self.name)
+        if not data:
+            return
+
+        print(f"{self.name} received")
 
         decrypted = Crypto.xor(data, self.key)
 
         if self.next:
-            encrypted = Crypto.xor(decrypted, self.key)
             s = socket.socket()
             s.connect(self.next)
-            s.send(encrypted)
+            s.send(decrypted)
             s.close()
         else:
             sender, target, msg = Packet.decode(decrypted)
 
-            # רישום משתמש
+            print("FINAL NODE:", sender, target, msg)
+
             if msg.startswith("REGISTER:"):
                 port = int(msg.split(":")[1])
-                Node.clients[sender] = port
-                print("Registered:", Node.clients)
+                Node.clients[sender] = (client_ip, port)
+                print("REGISTERED:", Node.clients)
                 return
 
-            # שליחה לכולם
             if target == "ALL":
-                for user, port in Node.clients.items():
-                    self.send_to_client(port, decrypted)
+                for info in Node.clients.values():
+                    self.send_to_client(info, decrypted)
             else:
-                # שליחה פרטית
                 if target in Node.clients:
                     self.send_to_client(Node.clients[target], decrypted)
 
-    def send_to_client(self, port, data):
-        try:
-            s = socket.socket()
-            s.connect(("127.0.0.1", port))
-            s.send(data)
-            s.close()
-        except:
-            pass
+    def send_to_client(self, client_info, data):
+        ip, port = client_info
+        s = socket.socket()
+        s.connect((ip, port))
+        s.send(data)
+        s.close()

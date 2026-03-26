@@ -1,5 +1,4 @@
 class Packet:
-
     def __init__(self, sender, target, message):
         self.sender = sender
         self.target = target

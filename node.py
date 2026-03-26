@@ -3,7 +3,6 @@ import threading
 from crypto_utils import Crypto
 from packet import Packet
 
-
 class Node:
     clients = {}
 
@@ -30,44 +29,54 @@ class Node:
             ).start()
 
     def handle(self, conn, addr):
-        client_ip = addr[0]
-
         data = conn.recv(4096)
         conn.close()
 
         if not data:
             return
 
-        print(f"{self.name} received")
-
+        print(f"{self.name} received data")
         decrypted = Crypto.xor(data, self.key)
 
         if self.next:
             s = socket.socket()
-            s.connect(self.next)
-            s.send(decrypted)
-            s.close()
+            try:
+                s.connect(self.next)
+                s.send(decrypted)
+                s.close()
+            except Exception as e:
+                print(f"Error connecting to next node {self.next}: {e}")
         else:
-            sender, target, msg = Packet.decode(decrypted)
+            try:
+                sender, target, msg = Packet.decode(decrypted)
+                print("FINAL NODE parsed:", sender, target, msg)
 
-            print("FINAL NODE:", sender, target, msg)
+                if msg.startswith("REGISTER:"):
+                    parts = msg.split(":")
+                    port = int(parts[1])
+                    # חילוץ ה-IP מההודעה (ואם אין, לוקחים את addr[0] כגיבוי)
+                    client_ip = parts[2] if len(parts) > 2 else addr[0]
+                    Node.clients[sender] = (client_ip, port)
+                    print("REGISTERED:", Node.clients)
+                    return
 
-            if msg.startswith("REGISTER:"):
-                port = int(msg.split(":")[1])
-                Node.clients[sender] = (client_ip, port)
-                print("REGISTERED:", Node.clients)
-                return
-
-            if target == "ALL":
-                for info in Node.clients.values():
-                    self.send_to_client(info, decrypted)
-            else:
-                if target in Node.clients:
-                    self.send_to_client(Node.clients[target], decrypted)
+                if target == "ALL":
+                    for info in Node.clients.values():
+                        self.send_to_client(info, decrypted)
+                else:
+                    if target in Node.clients:
+                        self.send_to_client(Node.clients[target], decrypted)
+                    else:
+                        print(f"Target {target} not found in registered clients.")
+            except Exception as e:
+                print(f"Error processing final node message: {e}")
 
     def send_to_client(self, client_info, data):
         ip, port = client_info
         s = socket.socket()
-        s.connect((ip, port))
-        s.send(data)
-        s.close()
+        try:
+            s.connect((ip, port))
+            s.send(data)
+            s.close()
+        except Exception as e:
+            print(f"Failed to send to client {ip}:{port} -> {e}")

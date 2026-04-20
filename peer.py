@@ -9,35 +9,35 @@ from packet import Packet
 
 
 class Peer:
-    def __init__(self, name):
+    def __init__(self, name, server_ip, my_ip):
         self.name = name
-        self.server_ip = "127.0.0.1"
+        self.server_ip = server_ip
         self.server_port = 9000
+        self.client_ip = my_ip  # עכשיו ה-IP מוזן ידנית!
         self.listen_port = random.randint(10000, 20000)
-        self.key = random.randint(1, 255)  # מפתח הצפנה פשוט לכל peer
+        self.key = random.randint(1, 255)
 
     def start(self):
-        # האזנה להודעות נכנסות
         threading.Thread(target=self.listen, daemon=True).start()
         time.sleep(0.5)
-        # רישום בשרת
         self.register()
 
     def register(self):
-        msg = f"REGISTER|{self.name}|127.0.0.1|{self.listen_port}|{self.key}"
+        msg = f"REGISTER|{self.name}|{self.client_ip}|{self.listen_port}|{self.key}"
         self.send_raw(self.server_ip, self.server_port, msg.encode())
+        print(f"[System] Registered successfully with MY IP: {self.client_ip}:{self.listen_port}")
 
     def send_raw(self, ip, port, data):
         try:
             s = socket.socket()
+            s.settimeout(5)
             s.connect((ip, port))
             s.send(data)
             s.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"\n[!] Network Error: Could not send to {ip}:{port} - {e}")
 
     def send_message(self, target_name, message):
-        # 1. בקשת מסלול מהשרת
         try:
             s = socket.socket()
             s.connect((self.server_ip, self.server_port))
@@ -46,25 +46,21 @@ class Peer:
             s.close()
 
             if route_data.startswith("ERROR"):
-                print("[!] Target user not found.")
+                print(f"\n[!] Server says: {route_data}")
                 return
             route = json.loads(route_data)
-        except:
-            print("[!] Could not connect to server.")
+            print(f"\n[Debug] Route received from server: {[n['name'] for n in route]}")
+        except Exception as e:
+            print(f"\n[!] Could not connect to directory server at {self.server_ip}: {e}")
             return
 
-        # 2. בניית ה"בצל" (Onion) מהסוף להתחלה
-        # השכבה הפנימית ביותר: ההודעה עצמה
         packet = Packet(self.name, target_name, message)
         data = packet.encode()
 
-        # עטיפה בשכבות לפי המסלול (בסדר הפוך)
         for i in range(len(route) - 1, -1, -1):
             node = route[i]
-            # הצפנה עם המפתח של אותה תחנה
             data = Crypto.xor(data, node['key'])
-            # הוספת "כתובת היעד הבא" עבור התחנה הזו
-            if i == len(route) - 1:  # התחנה האחרונה
+            if i == len(route) - 1:
                 header = b"FINAL"
             else:
                 next_node = route[i + 1]
@@ -72,8 +68,9 @@ class Peer:
 
             data = header + b"|" + data
 
-        # 3. שליחה לתחנה הראשונה במסלול
         first_node = route[0]
+        print(
+            f"[Debug] Sending Onion packet to first node: {first_node['name']} (IP: {first_node['ip']}:{first_node['port']})")
         self.send_raw(first_node['ip'], first_node['port'], data)
 
     def listen(self):
@@ -81,30 +78,38 @@ class Peer:
         server.bind(("0.0.0.0", self.listen_port))
         server.listen()
         while True:
-            conn, _ = server.accept()
-            data = conn.recv(4096)
-            conn.close()
+            try:
+                conn, _ = server.accept()
+                data = conn.recv(4096)
+                conn.close()
 
-            # "קילוף" השכבה שלי
-            decrypted = Crypto.xor(data.split(b"|", 1)[1], self.key)
-            header = data.split(b"|", 1)[0].decode()
+                if not data: continue
 
-            if header == "FINAL":
-                # אני היעד הסופי!
-                sender, _, msg = Packet.decode(decrypted)
-                print(f"\n[New Message from {sender}]: {msg}")
-                print(f"{self.name}> ", end="", flush=True)
-            else:
-                # אני תחנת ביניים - מעביר הלאה
-                next_ip, next_port = header.split(":")
-                self.send_raw(next_ip, int(next_port), decrypted)
+                header_part, payload = data.split(b"|", 1)
+                header = header_part.decode()
+                decrypted = Crypto.xor(payload, self.key)
+
+                if header == "FINAL":
+                    sender, target, msg = Packet.decode(decrypted)
+                    print(f"\n\n[New Message from {sender}]: {msg}")
+                    print(f"{self.name}> ", end="", flush=True)
+                else:
+                    next_ip, next_port = header.split(":")
+                    print(f"\n[Debug] I am a relay! Forwarding packet to {next_ip}:{next_port}...")
+                    self.send_raw(next_ip, int(next_port), decrypted)
+                    print(f"{self.name}> ", end="", flush=True)
+            except Exception as e:
+                pass
 
 
 if __name__ == "__main__":
+    server_ip = input("Enter Directory Server IP (e.g. 192.168.X.X): ")
+    my_ip = input("Enter THIS computer's local IP (e.g. 192.168.X.X): ")
     name = input("Enter your name: ")
-    p = Peer(name)
+
+    p = Peer(name, server_ip, my_ip)
     p.start()
-    print(f"Logged in as {name}. Format: Name|Message")
+    print(f"Logged in as {name}. Format: TargetName|Message")
     while True:
         inp = input(f"{name}> ")
         if "|" in inp:

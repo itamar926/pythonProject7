@@ -5,7 +5,6 @@ import random
 
 HOST = "0.0.0.0"
 PORT = 9000
-
 active_peers = {}
 
 
@@ -18,7 +17,6 @@ def handle_client(conn):
 
         if command == "REGISTER":
             name, ip, port, key = parts[1], parts[2], int(parts[3]), int(parts[4])
-            # רישום משתמש עם כל הפרטים כולל השם
             active_peers[name] = {"name": name, "ip": ip, "port": port, "key": key}
             print(f"[+] Registered: {name} ({ip}:{port})")
 
@@ -28,11 +26,16 @@ def handle_client(conn):
                 conn.send(b"ERROR|Target not found")
                 return
 
-            # בחירת תחנות ביניים (כל מי שאינו השולח או המקבל)
+            # סינון המשתמשים שיכולים לשמש כתחנות ביניים (לא אני ולא היעד)
             others = [info for peer_name, info in active_peers.items() if
                       peer_name != target_name and peer_name != sender_name]
-            intermediates = random.sample(others, min(len(others), 2))
 
+            # הגרלה של 3 תחנות רנדומליות מתוך הרשימה
+            # אם יש פחות מ-3 משתמשים מחוברים, הוא יקח את כולם
+            num_hops = min(len(others), 3)
+            intermediates = random.sample(others, num_hops)
+
+            # יצירת המסלול הסופי: תחנות הביניים + היעד הסופי
             route = intermediates + [active_peers[target_name]]
             conn.send(json.dumps(route).encode('utf-8'))
 

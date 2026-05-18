@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, messagebox
 import random
-from client import Client
+from server_gui import Client
 
 ENTRY_IP = "127.0.0.1"
 ENTRY_PORT = 9010

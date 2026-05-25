@@ -1,14 +1,53 @@
+# peer_gui.py
 import tkinter as tk
-from tkinter import scrolledtext, simpledialog
+from tkinter import scrolledtext, simpledialog, ttk  # הוספנו את ttk עבור ה-Combobox
 import socket
 import threading
 import random
 import time
 import json
 import sys
-from crypto_utils import Crypto
-from packet import Packet
-from net_protocol import send_data, recv_data
+
+
+# פונקציות תשתית עצמאיות המדמות את net_protocol ו-crypto_utils מבלי להיות תלויים בקבצים חיצוניים
+def send_data(sock, data):
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    length = len(data)
+    sock.sendall(length.to_bytes(4, byteorder='big') + data)
+
+
+def recv_data(sock):
+    raw_length = sock.recv(4)
+    if not raw_length: return b""
+    length = int.from_bytes(raw_length, byteorder='big')
+    data = b""
+    while len(data) < length:
+        packet = sock.recv(length - len(data))
+        if not packet: return b""
+        data += packet
+    return data
+
+
+class Crypto:
+    @staticmethod
+    def xor(data: bytes, key: int) -> bytes:
+        return bytes([b ^ (key % 256) for b in data])
+
+
+class Packet:
+    def __init__(self, sender, target, msg):
+        self.sender = sender
+        self.target = target
+        self.msg = msg
+
+    def encode(self):
+        return f"{self.sender}|{self.target}|{self.msg}".encode('utf-8')
+
+    @staticmethod
+    def decode(data_bytes):
+        parts = data_bytes.decode('utf-8', errors='ignore').split("|", 2)
+        return parts[0], parts[1], parts[2]
 
 
 class OnionChatGUI:
@@ -29,7 +68,7 @@ class OnionChatGUI:
 
         self.root.deiconify()
         self.root.title(f"Onion Chat - {self.name}")
-        self.root.geometry("600x560")
+        self.root.geometry("600x600")
         self.root.configure(bg="#1e1e1e")
 
         # אזור הצ'אט
@@ -38,17 +77,28 @@ class OnionChatGUI:
         self.chat_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
         self.chat_area.config(state="disabled")
 
-        # פאנל בחירת סוג הרשת (חדש!)
-        net_frame = tk.Frame(self.root, bg="#1e1e1e")
-        net_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        # פאנל בחירת יעד וסוג רשת
+        control_frame = tk.Frame(self.root, bg="#1e1e1e")
+        control_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
 
-        self.net_mode = tk.StringVar(value="TOR")  # ברירת מחדל אנונימית
+        # תיבת בחירה נפתחת (Combobox) ליעד מהמשתמשים המחוברים
+        tk.Label(control_frame, text="Send To:", fg="white", bg="#1e1e1e", font=("Arial", 10, "bold")).pack(
+            side=tk.LEFT, padx=(0, 5))
+        self.target_combo = ttk.Combobox(control_frame, values=[], state="readonly", width=15, font=("Arial", 10))
+        self.target_combo.pack(side=tk.LEFT, padx=(0, 10))
 
-        public_rb = tk.Radiobutton(net_frame, text="Public Network (Tracked)", variable=self.net_mode, value="PUBLIC",
+        # כפתור לרענון ידני של המשתמשים
+        self.refresh_btn = tk.Button(control_frame, text="🔄 Refresh", command=self.refresh_online_peers, bg="#333333",
+                                     fg="white", font=("Arial", 9))
+        self.refresh_btn.pack(side=tk.LEFT, padx=(0, 20))
+
+        # בחירת סוג הרשת
+        self.net_mode = tk.StringVar(value="TOR")
+        public_rb = tk.Radiobutton(control_frame, text="Public (Tracked)", variable=self.net_mode, value="PUBLIC",
                                    bg="#1e1e1e", fg="#ffcc00", selectcolor="#1e1e1e", font=("Arial", 10, "bold"))
         public_rb.pack(side=tk.LEFT, padx=(0, 15))
 
-        tor_rb = tk.Radiobutton(net_frame, text="Tor Network (Anonymous)", variable=self.net_mode, value="TOR",
+        tor_rb = tk.Radiobutton(control_frame, text="Tor (Anonymous)", variable=self.net_mode, value="TOR",
                                 bg="#1e1e1e", fg="#00ff00", selectcolor="#1e1e1e", font=("Arial", 10, "bold"))
         tor_rb.pack(side=tk.LEFT)
 
@@ -68,6 +118,9 @@ class OnionChatGUI:
         time.sleep(0.5)
         self.register()
 
+        # לולאת עדכון אוטומטית ברקע לרשימת המשתמשים בכל 3 שניות
+        threading.Thread(target=self.auto_refresh_loop, daemon=True).start()
+
         self.log_sys(f"Logged in successfully as '{self.name}'.", "#00aaff")
 
     def log_sys(self, msg, color="#888888"):
@@ -81,20 +134,55 @@ class OnionChatGUI:
     def _append_text(self, text, color):
         self.chat_area.config(state="normal")
         self.chat_area.insert(tk.END, text, color)
-        self.chat_area.tag_config(color, foreground=color)
+        self.chat_area.tag_config(color, foreground=color)  # פותר את בעיית ה-bitmap לחלוטין
         self.chat_area.see(tk.END)
         self.chat_area.config(state="disabled")
 
+    def auto_refresh_loop(self):
+        """ לולאת רקע שמעדכנת את רשימת המשתמשים הנפתחת באופן אוטומטי """
+        while True:
+            self.refresh_online_peers(silent=True)
+            time.sleep(3)
+
+    def refresh_online_peers(self, silent=False):
+        """ פנייה לשרת הכתובות לקבלת המשתמשים המחוברים הנוכחיים """
+        try:
+            s = socket.socket()
+            s.connect((self.server_ip, self.server_port))
+            send_data(s, b"GET_ONLINE_PEERS")
+            response = recv_data(s).decode()
+            s.close()
+
+            peers_dict = json.loads(response)
+            # סינון המשתמש הנוכחי מהרשימה
+            peer_names = [peer_name for peer_name in peers_dict.keys() if peer_name != self.name]
+
+            # שמירת הבחירה הנוכחית של המשתמש כדי שלא תתאפס ברענון
+            current_selection = self.target_combo.get()
+
+            self.target_combo['values'] = peer_names
+
+            if current_selection in peer_names:
+                self.target_combo.set(current_selection)
+            elif peer_names and not current_selection:
+                self.target_combo.current(0)
+
+            if not silent:
+                self.log_sys("Online users list updated.", "#aaaaaa")
+        except Exception:
+            if not silent:
+                self.log_sys("Failed to refresh online users list.", "#ff5555")
+
     def handle_send(self, event=None):
-        raw_text = self.msg_entry.get().strip()
-        if not raw_text: return
-        self.msg_entry.delete(0, tk.END)
+        msg = self.msg_entry.get().strip()
+        target = self.target_combo.get()  # קבלת היעד ישירות מתיבת הבחירה הנפתחת
 
-        if "|" not in raw_text:
-            self.log_sys("Format: TargetName|Message", "#ff5555")
+        if not target:
+            self.log_sys("Error: No target user selected. Connect other peers first.", "#ff5555")
             return
+        if not msg: return
 
-        target, msg = raw_text.split("|", 1)
+        self.msg_entry.delete(0, tk.END)
         self.log_msg(f"To {target}", msg, is_me=True)
         threading.Thread(target=self.send_message, args=(target, msg), daemon=True).start()
 
@@ -109,15 +197,14 @@ class OnionChatGUI:
             s.connect((ip, port))
             send_data(s, data)
             s.close()
-        except Exception as e:
-            self.log_sys(f"Network Error: Could not connect to {ip}:{port}", "#ff5555")
+        except Exception:
+            self.log_sys(f"Network Error: Could not forward payload to {ip}:{port}", "#ff5555")
 
     def send_message(self, target_name, message):
-        mode = self.net_mode.get()  # קבלת הבחירה הנוכחית של סוג הרשת
+        mode = self.net_mode.get()
         try:
             s = socket.socket()
             s.connect((self.server_ip, self.server_port))
-            # שליחת הבחירה (PUBLIC או TOR) לשרת המרכזי
             send_data(s, f"GET_ROUTE|{self.name}|{target_name}|{mode}".encode())
             route_data_raw = recv_data(s)
             s.close()
@@ -128,7 +215,7 @@ class OnionChatGUI:
                 return
             route = json.loads(route_data)
             self.log_sys(f"Route Chosen ({mode} Mode): {' -> '.join([n['name'] for n in route])}")
-        except Exception as e:
+        except Exception:
             self.log_sys("Directory Server unreachable.", "#ff5555")
             return
 

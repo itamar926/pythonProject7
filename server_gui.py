@@ -18,9 +18,11 @@ class ServerGUI:
         self.root.geometry("900x700")
         self.root.configure(bg="#121212")
 
+        # לוח הציור (Canvas) - תופס את החלק העליון
         self.canvas = tk.Canvas(self.root, bg="#121212", highlightthickness=0, height=400)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
+        # אזור הלוגים של האדמין - תופס את החלק התחתון
         log_frame = tk.Frame(self.root, bg="#121212")
         log_frame.pack(fill=tk.X, padx=10, pady=10)
 
@@ -39,6 +41,7 @@ class ServerGUI:
         threading.Thread(target=self.start_server, daemon=True).start()
 
     def log_admin(self, msg):
+        """ פונקציית עזר להוספת שורת לוג למסך האדמין """
         self.log_area.config(state="normal")
         self.log_area.insert(tk.END, f"[LOG] {msg}\n")
         self.log_area.see(tk.END)
@@ -64,21 +67,6 @@ class ServerGUI:
             self.canvas.create_oval(x - 20, y - 20, x + 20, y + 20, fill="#007acc", outline="white", width=2,
                                     tags="node")
             self.canvas.create_text(x, y + 35, text=name, fill="white", font=("Arial", 10, "bold"), tags="text")
-
-    def broadcast_user_list(self):
-        """ שליחת רשימת השמות המעודכנת לכל המשתמשים המחוברים ברשת """
-        user_list = list(self.active_peers.keys())
-        msg = f"USER_LIST|{json.dumps(user_list)}"
-
-        for peer_name, info in list(self.active_peers.items()):
-            try:
-                s = socket.socket()
-                s.settimeout(2)
-                s.connect((info['ip'], info['port']))
-                send_data(s, msg.encode('utf-8'))
-                s.close()
-            except:
-                pass  # אם משתמש התנתק זמנית, נתעלם
 
     def draw_route(self, sender, route):
         self.canvas.delete("line")
@@ -107,27 +95,29 @@ class ServerGUI:
                 self.root.after(0, self.update_nodes_display)
                 self.root.after(0, self.log_admin, f"New Node Registered: {name} ({ip}:{port})")
 
-                # הפצת הרשימה החדשה לכולם (בעזרת ת'רד נפרד כדי לא לתקוע את השרת)
-                threading.Thread(target=self.broadcast_user_list, daemon=True).start()
-
             elif command == "GET_ROUTE":
+                # הפורמט החדש: GET_ROUTE|Sender|Target|NetworkType
                 sender_name, target_name, net_type = parts[1], parts[2], parts[3]
 
                 if target_name not in self.active_peers:
                     send_data(conn, b"ERROR|Target not found")
                     return
 
+                # הגרלת מסלול
                 others = [info for peer_name, info in self.active_peers.items() if
                           peer_name != target_name and peer_name != sender_name]
                 num_hops = min(len(others), 3)
                 intermediates = random.sample(others, num_hops)
                 route = intermediates + [self.active_peers[target_name]]
 
+                # שליחת המסלול חזרה ללקוח
                 send_data(conn, json.dumps(route).encode('utf-8'))
 
+                # לוג קבוע של אדמין (השולח והיעד תמיד חשופים לשרת המרכזי)
                 log_msg = f"Message Request -> Sender: {sender_name} | Target: {target_name} | Mode: {net_type}"
                 self.root.after(0, self.log_admin, log_msg)
 
+                # ויזואליזציה על המפה על פי בחירת הלקוח
                 if net_type == "PUBLIC":
                     self.root.after(0, self.draw_route, sender_name, route)
                     self.root.after(0, self.log_admin,

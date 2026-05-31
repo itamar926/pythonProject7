@@ -1,39 +1,22 @@
-import socket
+# net_protocol.py
 
-HEADER_SIZE = 8
-
-
-def send_data(sock, data_bytes):
-    """ שולח נתונים בתוספת כותרת של גודל החבילה (Length Prefix) """
-    try:
-        msg_length = len(data_bytes)
-        # יוצר כותרת באורך קבוע של 8 תווים וממלא ברווחים
-        header = f"{msg_length:<{HEADER_SIZE}}".encode('utf-8')
-        sock.sendall(header + data_bytes)
-    except Exception as e:
-        print(f"[Protocol Error] Failed to send: {e}")
-
+def send_data(sock, data):
+    """שליחת נתונים עם קידומת אורך של 4 בתים"""
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    length = len(data)
+    sock.sendall(length.to_bytes(4, byteorder='big') + data)
 
 def recv_data(sock):
-    """ קורא את הכותרת, מבין מה הגודל המדויק, וקורא את כל החבילה """
-    try:
-        # קוראים קודם כל את הכותרת (8 בייטים)
-        header = b""
-        while len(header) < HEADER_SIZE:
-            chunk = sock.recv(HEADER_SIZE - len(header))
-            if not chunk: return None
-            header += chunk
-
-        # מחלצים את הגודל מתוך הכותרת
-        msg_length = int(header.decode('utf-8').strip())
-
-        # קוראים את הנתונים עצמם בדיוק לפי הגודל שחולץ
-        data = b""
-        while len(data) < msg_length:
-            chunk = sock.recv(msg_length - len(data))
-            if not chunk: break
-            data += chunk
-
-        return data
-    except Exception as e:
-        return None
+    """קריאת נתונים על בסיס קידומת האורך שהתקבלה"""
+    raw_length = sock.recv(4)
+    if not raw_length: 
+        return b""
+    length = int.from_bytes(raw_length, byteorder='big')
+    data = b""
+    while len(data) < length:
+        packet = sock.recv(length - len(data))
+        if not packet: 
+            return b""
+        data += packet
+    return data

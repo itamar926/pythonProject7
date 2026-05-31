@@ -7,9 +7,12 @@ import tkinter as tk
 from tkinter import scrolledtext
 import math
 
+# ייבוא פרוטוקול הרשת המשותף
+from net_protocol import send_data, recv_data
+
 HOST = "0.0.0.0"
 PORT = 9000
-active_peers = {}  # name -> dict containing connection info and UI coordinates
+active_peers = {}  # name -> dict
 
 
 class ServerGUI:
@@ -19,28 +22,25 @@ class ServerGUI:
         self.root.geometry("700x600")
         self.root.configure(bg="#121212")
 
-        # כותרת ראשית
         title = tk.Label(root, text="👁️ ONION NETWORK DIRECTORY & RADAR", font=("Courier", 16, "bold"), fg="#00FF00",
                          bg="#121212")
         title.pack(pady=10)
 
-        # פאנל עליון - קנבס הראדאר
         self.canvas = tk.Canvas(root, width=400, height=350, bg="#050505", highlightbackground="#00FF00",
                                 highlightthickness=1)
         self.canvas.pack(pady=5)
         self.draw_radar_background()
 
-        # פאנל תחתון - לוגים
         self.log_area = scrolledtext.ScrolledText(root, width=80, height=10, bg="#1a1a1a", fg="#00FF00",
                                                   font=("Consolas", 10))
         self.log_area.pack(pady=10, padx=10)
 
-        # תיקון באג ה-bitmap בעזרת foreground מלא
+        # תיקון באג ה-bitmap (שימוש ב-foreground)
         self.log_area.tag_config("info", foreground="#00FF00")
         self.log_area.tag_config("warning", foreground="#FF3333")
         self.log_area.tag_config("route", foreground="#FFFF00")
 
-        self.log("[*] Directory Server GUI initialized. Ready to bind.")
+        self.log("[*] Directory Server GUI initialized. Protocol synced with clients.")
 
     def draw_radar_background(self):
         self.canvas.delete("all")
@@ -74,8 +74,10 @@ class ServerGUI:
 
 def handle_client(conn, app):
     try:
-        data = conn.recv(4096).decode('utf-8')
-        if not data: return
+        raw_data = recv_data(conn)
+        if not raw_data: return
+
+        data = raw_data.decode('utf-8', errors='ignore')
         parts = data.split("|")
         command = parts[0]
 
@@ -92,13 +94,12 @@ def handle_client(conn, app):
             app.update_radar()
 
         elif command == "GET_ONLINE_PEERS":
-            # החזרת המילון המלא של המשתמשים לטובת תיבת הבחירה של הלקוח
-            conn.send(json.dumps(active_peers).encode('utf-8'))
+            send_data(conn, json.dumps(active_peers).encode('utf-8'))
 
         elif command == "GET_ROUTE":
             sender_name, target_name, mode = parts[1], parts[2], parts[3]
             if target_name not in active_peers:
-                conn.send(b"ERROR|Target not found")
+                send_data(conn, b"ERROR|Target not found")
                 return
 
             others = [info for p_name, info in active_peers.items() if p_name != target_name and p_name != sender_name]
@@ -106,7 +107,7 @@ def handle_client(conn, app):
             intermediates = random.sample(others, num_hops)
 
             route = intermediates + [active_peers[target_name]]
-            conn.send(json.dumps(route).encode('utf-8'))
+            send_data(conn, json.dumps(route).encode('utf-8'))
 
             path_names = [sender_name] + [n["name"] for n in route]
             path_str = " -> ".join(path_names)
@@ -138,5 +139,5 @@ def start_socket_server(app):
 if __name__ == "__main__":
     root = tk.Tk()
     app = ServerGUI(root)
-    threading.Thread(target=start_socket_server, args=(app,), daemon=True).start()
+    threading.Thread(start_socket_server, args=(app,), daemon=True).start()
     root.mainloop()

@@ -1,5 +1,7 @@
+# crypto_utils.py
+
 class Crypto:
     @staticmethod
     def xor(data: bytes, key: int) -> bytes:
-        """ ביצוע הצפנת XOR פשוטה באמצעות מפתח בגודל בייט אחד """
-        return bytes([b ^ key for b in data])
+        """מבצע הצפנת/פענוח XOR סימטרית על מערך בתים באמצעות מפתח קבוע"""
+        return bytes([b ^ (key % 256) for b in data])
